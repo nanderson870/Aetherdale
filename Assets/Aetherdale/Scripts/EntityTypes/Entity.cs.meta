@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 5919e59e9059bfc499cc07f773075f3e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - floatingHealthBarTransform: {instanceID: 0}
+  - faction: {instanceID: 0}
+  - dropTable: {fileID: 11400000, guid: 9edb3069eea12ec428333f4661a7be58, type: 2}
+  - cameraContext: {instanceID: 0}
+  - sightPoint: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
