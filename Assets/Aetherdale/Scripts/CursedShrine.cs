@@ -9,6 +9,9 @@ public class CursedShrine : NetworkBehaviour
     public TraitOffering traitOfferingPrefab;
     public Transform[] traitOfferingTransforms;
 
+    public ShopOfferingEffects[] effects;
+    [SerializeField] Color effectsColor;
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -21,7 +24,7 @@ public class CursedShrine : NetworkBehaviour
     
     void SetTraits(List<Trait> traits)
     {
-        foreach(Transform transform in traitOfferingTransforms)
+        foreach (Transform transform in traitOfferingTransforms)
         {
             Trait trait = traits[0];
             traits.Remove(trait);
@@ -31,6 +34,11 @@ public class CursedShrine : NetworkBehaviour
             offeringInstance.SetTrait(trait);
 
             NetworkServer.Spawn(offeringInstance.gameObject);
+        }
+
+        foreach (ShopOfferingEffects effect in effects)
+        {
+            effect.SetColor(effectsColor);
         }
     }
 

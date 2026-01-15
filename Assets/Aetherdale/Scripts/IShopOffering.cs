@@ -123,6 +123,7 @@ public interface IShopOffering
     public bool PlayerMeetsRequirements(Player player);
     public ShopOfferingInfo GetInfo();
     public GameObject GetPreviewPrefab();
+    public Rarity GetRarity();
 }
 
 public enum ShopOfferingType

@@ -12,6 +12,8 @@ namespace Aetherdale
 
         [SerializeField] Transform offeringTransform;
 
+        [SerializeField] ShopOfferingEffects effects;
+
         [SyncVar(hook = nameof(ShopOfferingChanged))] ShopOfferingInfo offeringInfo;
         [SerializeField] EventReference buySound;
 
@@ -102,6 +104,8 @@ namespace Aetherdale
 
             GameObject inst = Instantiate(offering.GetPreviewPrefab(), offeringTransform);
             inst.transform.localPosition = Vector3.zero;
+
+            effects.SetRarity(offering.GetRarity());
             BroadcastMessage("MeshesChanged", SendMessageOptions.DontRequireReceiver);
         }
 

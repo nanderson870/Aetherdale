@@ -58,4 +58,9 @@ public abstract class Consumable : IShopOffering
     {
         return -1;
     }
+
+    public virtual Rarity GetRarity()
+    {
+        return Rarity.Common;
+    }
 }

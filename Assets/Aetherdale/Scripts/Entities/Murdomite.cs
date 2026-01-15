@@ -268,8 +268,8 @@ public class Murdomite : StatefulCombatEntity
         Murdomite murdomite;
         Entity target;
         float startTime;
-        float maxDuration = 25;
-        float eruptRadius = 2F;
+        float maxDuration = 8;
+        float eruptRadius = 4F;
 
         bool entered = false;
 

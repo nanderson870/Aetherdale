@@ -80,6 +80,23 @@ public class ColorPalette : ScriptableObject
         };
     }
 
+    public static Color GetEmissiveColorForRarity(Rarity rarity)
+    {
+        Color rarityColor = GetColorForRarity(rarity);
+        Color.RGBToHSV(rarityColor, out float h, out float s, out float v);
+
+        if (s == 0)
+        {
+            v = 0.6F; // Pure white is a bit too bright to have 1.0 value and emission
+        }
+        else
+        {
+            v = 1.0F; // Crank that puppy up
+        }
+
+        return Color.HSVToRGB(h, s, v);
+    }
+
     public static Color GetPrimaryColorForElement(Element element)
     {
         ColorPalette palette = GetDefaultPalette();

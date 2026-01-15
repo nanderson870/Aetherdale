@@ -92,7 +92,7 @@ public class Outliner : MonoBehaviour
     {
         foreach (MeshRenderer meshRenderer in GetComponentsInChildren<MeshRenderer>())
         {
-            if (meshRenderer.gameObject.layer == LayerMask.NameToLayer("Outlines")) continue;
+            if (meshRenderer.gameObject.tag == "IgnoreInOutliner" || meshRenderer.gameObject.layer == LayerMask.NameToLayer("Outlines")) continue;
 
             MeshRenderer outline = AddMeshRendererOutlineDuplicate(meshRenderer);
 

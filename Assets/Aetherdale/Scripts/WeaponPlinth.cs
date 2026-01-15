@@ -5,7 +5,9 @@ public class WeaponPlinth : NetworkBehaviour, IInteractable
 {
     [SerializeField] Transform weaponTransform;
     [SerializeField] int minLevel = 0;
-    
+
+    [SerializeField] ShopOfferingEffects effects;
+
     float rotationSpeed = 18.0F;
     float rotation = 0;
     const float rotationExtents = 40;
@@ -94,6 +96,7 @@ public class WeaponPlinth : NetworkBehaviour, IInteractable
         }
 
         weapon = (WeaponData) ShopOffering.ShopOfferingFromInfo(newWeaponInfo);
+        effects.SetRarity(weapon.GetRarity());
 
         GameObject inst = Instantiate(weapon.GetPreviewPrefab(), weaponTransform);
         inst.transform.localPosition = Vector3.zero;
