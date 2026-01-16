@@ -70,9 +70,9 @@ public abstract class Elite : MonoBehaviour
         Color primaryColor = GetPrimaryColor();
         Color secondaryColor = GetSecondaryColor();
 
-        foreach (Entity.RendererMaterialColor rmc in entity.defaultMaterialsColors)
+        foreach (RendererMaterialColor rmc in entity.defaultMaterialsColors)
         {
-            foreach(Entity.MaterialColor mc in rmc.materialsColors)
+            foreach(MaterialColor mc in rmc.materialsColors)
             {
                 if (mc == null)
                 {
@@ -80,7 +80,7 @@ public abstract class Elite : MonoBehaviour
                     return;
                 }
                 
-                if (mc.eliteOverride == Entity.EliteOverrideMode.OverrideWithPrimary)
+                if (mc.eliteOverride == EliteOverrideMode.OverrideWithPrimary)
                 {
                     Color.RGBToHSV(primaryColor, out float original_h, out float original_s, out float original_v);
                     Color.RGBToHSV(primaryColor, out float new_h, out float new_s, out float v);
@@ -89,7 +89,7 @@ public abstract class Elite : MonoBehaviour
 
                     mc.color = primaryAdjusted;
                 }
-                else if (mc.eliteOverride == Entity.EliteOverrideMode.OverrideWithSecondary)
+                else if (mc.eliteOverride == EliteOverrideMode.OverrideWithSecondary)
                 {
                     Color.RGBToHSV(secondaryColor, out float original_h, out float original_s, out float original_v);
                     Color.RGBToHSV(secondaryColor, out float new_h, out float new_s, out float new_v);

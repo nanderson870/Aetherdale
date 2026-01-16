@@ -23,7 +23,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
 {
     public const float MELEE_HEALTH_ORBS_ON_KILL_MULT = 2.5F;
 
-    public const float UNIVERSAL_STAGGER_DURATION = 0.25F;
+    public const float UNIVERSAL_STAGGER_DURATION = 0.4F;
 
     const float ARMOR_50_PERCENT_DR = 200; // this much armor provides 50% damage reduction
 
@@ -40,7 +40,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
     public const float CORPSE_LIFESPAN = 60.0F;
 
     
-    public const float AIM_MOVESPEED_MULT = 0.65F;
+    public const float AIM_MOVESPEED_MULT = 0.35F;
 
     
     // Data about this entity
@@ -48,37 +48,10 @@ public abstract class Entity : NetworkBehaviour, Damageable
     [SerializeField] string entityTitle;
     [SerializeField] protected int baseHealth;
     [SerializeField] int baseArmor;
-
     [SerializeField] float baseEnergy = 100;
-    float energyRegenPerSecond = 2.0F;
-
-    [SyncVar] public bool grounded;
-
-
-
     #if UNITY_EDITOR
     public int effectiveHealth = 0;
-    protected override void OnValidate()
-    {
-        base.OnValidate();
-
-        float baseArmorMult = ARMOR_50_PERCENT_DR / (ARMOR_50_PERCENT_DR + baseArmor);
-
-        effectiveHealth = (int) (baseHealth / baseArmorMult);
-
-        if (impactResistance == 0)
-        {
-            Debug.LogError("Entity prefab " + GetName() + " has zero impact resistance");
-        }
-
-        if (clickToRefreshDMC)
-        {
-            SaveDefaultMaterialsColors();
-            clickToRefreshDMC = false;
-        }     
-    }
     #endif
-
     public Transform floatingHealthBarTransform;
     public EventReference idleSound;
     [SerializeField] Faction faction;
@@ -102,12 +75,17 @@ public abstract class Entity : NetworkBehaviour, Damageable
     public readonly SyncDictionary<string, float> stats = new();
     List<StatChange> postTraitStatChanges = new();
 
-    public Action<string, float> OnStatChanged;
 
-    protected Animator animator;
+    float energyRegenPerSecond = 2.0F;
+
+    [SyncVar] public bool grounded;
+
     bool animatorApplyRootMotion = false;
-
+    protected Animator animator;
     protected Rigidbody body;
+    ParticleSystem stunParticles;
+
+    LayerMask ignoreInSightCalculation;
 
     public readonly StateMachine stateMachine = new();
     protected List<EffectInstance> activeEffectInstances = new();
@@ -126,7 +104,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
     [SyncVar] public bool attacking = false;
     protected float lastAttack = -10.0F;
-    
+    protected float lastDodge = -10.0F;
     protected float lastDodgeAttack = -10.0F;
     [SyncVar] protected bool beingPushed = false;
 
@@ -145,9 +123,11 @@ public abstract class Entity : NetworkBehaviour, Damageable
     [SyncVar] protected bool invisible;
     [SyncVar] protected bool aiming;
 
-    ParticleSystem stunParticles;
+    [SyncVar] protected bool channeling = false;
 
-    LayerMask ignoreInSightCalculation;
+    [SyncVar] public Entity currentTarget;
+
+    
 
     Vector3 currentPushVector;
     float currentPushSpeed;
@@ -187,84 +167,52 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
     protected float lastDamaged = 0;
 
-    protected bool channeling = false;
-
-    [SyncVar] public Entity currentTarget;
 
 
     [SyncVar] Entity killer;
 
-    /// <summary>
-    /// Invoked when ANY entity dies
-    /// </summary>
-    /// <param name="deadEntity"></param>
-    /// <param name="killer"></param>
-    public static Action<Entity, Entity> OnEntityDied;
-    public Action<Entity, Entity> OnDeath;
+
 
     public Action OnDeathAnimationComplete;
 
     public Action<HitInfo> OnKillEntity;
-    protected void ResetOnKill() {OnKillEntity = null;}
-
-
     public Action<HitInfo> OnHitEntity;
-    protected void ResetOnHit() {OnHitEntity = null;}
+    public Action<HitInfo> OnDamaged;
+    public Action<Entity, Entity> OnDeath;
+    public static Action<Entity, Entity> OnEntityDied; // Invoked when ANY entity dies
 
     public Action<Entity, Entity> OnTransformed;
-
-
     public Action OnNextGrounded;
-
-
+    public Action<string, float> OnStatChanged;
     public Action OnEffectsChanged;
     public Action<EffectInstance> OnEffectAdded;
     public Action<EffectInstance> OnEffectRemoved;
 
-    public Action<HitInfo> OnDamaged;
-
-
-    [System.Serializable]
-    public class RendererMaterialColor
-    {
-        public Renderer renderer;
-        public MaterialColor[] materialsColors;
-
-        public RendererMaterialColor(Renderer renderer, MaterialColor[] materialsColors)
-        {
-            this.renderer = renderer;
-            this.materialsColors = materialsColors;
-        }
-    }
-
-    [System.Serializable]
-    public enum EliteOverrideMode
-    {
-        NotOverridden=0,
-        OverrideWithPrimary=1,
-        OverrideWithSecondary=2,
-    }
-
-    [Serializable]
-    public class MaterialColor
-    {
-        public Material material;
-        public Color color;
-
-        public EliteOverrideMode eliteOverride = EliteOverrideMode.NotOverridden;
-
-        public MaterialColor(Material material, Color color)
-        {
-            this.material = material;
-            this.color = color;
-        }
-    }
 
     [SerializeField] public List<RendererMaterialColor> defaultMaterialsColors;
 
     #if UNITY_EDITOR
     [SerializeField] bool clickToRefreshDMC = false;
-#endif
+    protected override void OnValidate()
+    {
+        base.OnValidate();
+
+        float baseArmorMult = ARMOR_50_PERCENT_DR / (ARMOR_50_PERCENT_DR + baseArmor);
+
+        effectiveHealth = (int) (baseHealth / baseArmorMult);
+
+        if (impactResistance == 0)
+        {
+            Debug.LogError("Entity prefab " + GetName() + " has zero impact resistance");
+        }
+
+        if (clickToRefreshDMC)
+        {
+            SaveDefaultMaterialsColors();
+            clickToRefreshDMC = false;
+        }     
+    }
+    #endif
 
     public virtual void Awake()
     {
@@ -318,42 +266,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
         footstepVFX.transform.position += Vector3.up * 0.1F;
     }
 
-    private void OnSceneChanged(Scene oldScene, Scene newScene)
-    {
-    }
-
-    public virtual void OnEnable()
-    {
-        if (stunParticles != null && !stunParticles.isStopped)
-        {
-            stunParticles.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
-        }
-    }
-
-    public override void OnStartClient()
-    {
-        base.OnStartClient();
-
-        // Set up stat SyncDict hooks
-        stats.OnChange += StatSyncDictCallback;
-
-        activeEffectIDs.OnChange += ActiveEffectIDsDictCallback;
-    }
-
-    private void ActiveEffectIDsDictCallback(SyncIDictionary<string, int>.Operation operation, string effectID, int stacks)
-    {
-        OnEffectsChanged?.Invoke();
-    }
-
-    private void StatSyncDictCallback(SyncIDictionary<string, float>.Operation op, string statName, float value)
-    {
-        if (op is not SyncIDictionary<string, float>.Operation.OP_REMOVE && statName != null)
-        {
-            OnStatChanged?.Invoke(statName, value);
-        }
-    }
-
-
     public override void OnStartServer()
     {
         base.OnStartServer();
@@ -377,10 +289,27 @@ public abstract class Entity : NetworkBehaviour, Damageable
         WorldManager.RegisterEntity(this);
     }
 
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+
+        // Set up stat SyncDict hooks
+        stats.OnChange += StatSyncDictCallback;
+
+        activeEffectIDs.OnChange += ActiveEffectIDsDictCallback;
+    }
+
+    public virtual void OnEnable()
+    {
+        if (stunParticles != null && !stunParticles.isStopped)
+        {
+            stunParticles.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+    }
+
     // Call base.Update() in all overrides!
     public virtual void Update()
     {
-
         if (isServer)
         {
             SetStat(Stats.CurrentHealth, GetStat(Stats.CurrentHealth) + GetStat(Stats.HealthRegen) * Time.deltaTime);
@@ -411,20 +340,12 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
         }
 
-
         // Process hit scale manipulation
         if (transform.localScale != originalScale)
         {
             transform.localScale = Vector3.Lerp(transform.localScale, originalScale, 12.0F * Time.deltaTime);
         }
 
-    }
-
-    void Grounded()
-    {
-        OnNextGrounded?.Invoke();
-
-        OnNextGrounded = null;
     }
 
     public virtual void FixedUpdate()
@@ -464,25 +385,11 @@ public abstract class Entity : NetworkBehaviour, Damageable
         }
     }
 
-    public virtual void ProcessPeriodics()
+    public virtual void LateUpdate()
     {
-        if (isServer)
+        if (Time.timeScale > 0)
         {
-            ProcessHealthRegen();
-        }
-    }
-
-    public void ProcessHealthRegen()
-    {
-        if (gameObject.activeSelf)
-        {
-            // regular regen
-            SetStat(Stats.CurrentHealth, GetStat(Stats.CurrentHealth) + GetStat(Stats.HealthRegen)* Time.deltaTime);
-        }
-        else
-        { 
-            // inactive regen
-            SetStat(Stats.CurrentHealth, GetStat(Stats.CurrentHealth) + GetStat(Stats.InactiveFormHealthRegen, GetStat(Stats.HealthRegen)) * Time.deltaTime);
+            Animate();
         }
     }
 
@@ -511,7 +418,54 @@ public abstract class Entity : NetworkBehaviour, Damageable
         }
     }
 
+    private void OnSceneChanged(Scene oldScene, Scene newScene)
+    {
+    }
+
+
+    private void StatSyncDictCallback(SyncIDictionary<string, float>.Operation op, string statName, float value)
+    {
+        if (op is not SyncIDictionary<string, float>.Operation.OP_REMOVE && statName != null)
+        {
+            OnStatChanged?.Invoke(statName, value);
+        }
+    }
+
     
+    protected abstract void Animate();
+
+    void Grounded()
+    {
+        OnNextGrounded?.Invoke();
+
+        OnNextGrounded = null;
+    }
+
+
+    public virtual void ProcessPeriodics()
+    {
+        if (isServer)
+        {
+            ProcessHealthRegen();
+        }
+    }
+
+    public void ProcessHealthRegen()
+    {
+        if (gameObject.activeSelf)
+        {
+            // regular regen
+            SetStat(Stats.CurrentHealth, GetStat(Stats.CurrentHealth) + GetStat(Stats.HealthRegen)* Time.deltaTime);
+        }
+        else
+        { 
+            // inactive regen
+            SetStat(Stats.CurrentHealth, GetStat(Stats.CurrentHealth) + GetStat(Stats.InactiveFormHealthRegen, GetStat(Stats.HealthRegen)) * Time.deltaTime);
+        }
+    }
+    
+
+#region Stats And Traits
     public virtual void SetDefaultStats()
     {
         float healthRatio = GetHealthRatio();
@@ -645,6 +599,70 @@ public abstract class Entity : NetworkBehaviour, Damageable
         }
     }
 
+    
+    [Server]
+    protected void AdjustMaxHealth (int newValue, float customRatio = -1)
+    {
+        float portion;
+        if (customRatio < -1)
+        {
+            portion = GetHealthRatio();
+        }
+        else
+        {
+            portion = customRatio;
+        }
+
+        SetStat(Stats.MaxHealth, newValue);
+
+        SetStat(Stats.CurrentHealth, portion * GetStat(Stats.MaxHealth));
+    }
+
+    [Server]
+    protected void AdjustMaxEnergy (int newValue, float customNewRatio = -1)
+    {
+        float portion;
+        if (customNewRatio < -1)
+        {
+            portion = GetEnergyRatio();
+        }
+        else
+        {
+            portion = customNewRatio;
+        }
+
+        SetStat(Stats.MaxEnergy, newValue);
+
+        SetStat(Stats.CurrentEnergy, portion * GetStat(Stats.MaxEnergy));
+    }
+
+    [Server]
+    public virtual void AdjustStatsForLevel()
+    {
+        // Preserve ratios to scale out our current alongside max
+        float healthPerc = GetHealthRatio();
+        float healthMult = Equation.ENTITY_HEALTH_SCALING.Calculate(this.entityLevel);
+        if (this is Boss)
+        {
+            healthMult = Equation.BOSS_HEALTH_SCALING.Calculate(this.entityLevel);
+        }
+        
+        SetStat(Stats.MaxHealth, (int) (baseHealth * healthMult)); //maxHealth = (int) (baseHealth * healthMult);
+        SetStat(Stats.CurrentHealth, (int) (GetStat(Stats.MaxHealth) * healthPerc)); //currentHealth = (int) (maxHealth * healthPerc);
+
+        float armorPerc = GetPercentArmor();
+        SetStat(Stats.MaxArmor, baseArmor);
+        SetStat(Stats.CurrentArmor, (int) (GetStat(Stats.MaxArmor) * armorPerc));
+    }
+
+    
+    [Server]
+    public void SetHealthRatio(float ratio)
+    {
+        SetStat(Stats.CurrentHealth, ratio * GetStat(Stats.MaxHealth));
+    }
+
+
     protected List<StatChange> traitStatChanges = new();
 
     public virtual TraitList GetTraits()
@@ -669,8 +687,8 @@ public abstract class Entity : NetworkBehaviour, Damageable
     {
         traitStatChanges.Clear();
 
-        ResetOnHit();
-        ResetOnKill();
+        OnKillEntity = null;
+        OnHitEntity = null;
 
         foreach (Trait trait in GetTraits())
         {
@@ -699,6 +717,277 @@ public abstract class Entity : NetworkBehaviour, Damageable
         EvaluateStats();
     }
 
+     public int GetMaxHealth()
+    {
+        return (int) GetStat(Stats.MaxHealth);
+    }
+
+    public int GetCurrentHealth()
+    {
+        return (int) GetStat(Stats.CurrentHealth);
+    }
+
+    public int GetCurrentArmor()
+    {
+        return (int) GetStat(Stats.CurrentArmor);
+    }
+
+    // returns proportion of max health remaining, e.g. 0.72 = 72%
+    public float GetHealthRatio()
+    {
+        if (GetStat(Stats.CurrentHealth) == 0)
+        {
+            return GetStat(Stats.MaxHealth) == 0 ? 1.0F : 0.0F;
+        }
+        
+        return GetCurrentHealth() / (float) GetMaxHealth();
+    }
+
+    public float GetEnergyRatio()
+    {
+        if (GetStat(Stats.CurrentEnergy) == 0)
+        {
+            return GetStat(Stats.MaxEnergy) == 0 ? 1.0F : 0.0F;
+        }
+        
+        return GetStat(Stats.CurrentEnergy) / (float) GetStat(Stats.MaxEnergy);
+    }
+
+    // returns proportion of max armor remaining, e.g. 1.00 = 100%
+    public float GetPercentArmor()
+    {
+        if (GetStat(Stats.CurrentArmor) <= 0)
+        {
+            return GetStat(Stats.MaxArmor) == 0 ? 1.0F : 0.0F;
+        }
+
+        return GetCurrentArmor() / GetStat(Stats.MaxArmor);
+    }
+
+    // returns the effective maximum health of this entity (total pre-armor damage required to kill it)
+    public float GetEffectiveMaxHealth()
+    {
+        return GetStat(Stats.MaxHealth) / GetArmorMultiplier();
+    }
+
+    public float ActualToEffectiveHealth(float actual)
+    {
+        return actual / GetArmorMultiplier();
+    }
+
+    public virtual float GetGlobalDamageMultiplier()
+    {
+        return Equation.ENEMY_GLOBAL_DAMAGE_MULTIPLIER.Calculate(entityLevel);
+    }
+
+    public float GetDamageTakenMultiplier()
+    {
+        float mult = 1.0F;
+        mult *= GetStat(Stats.DamageTakenMultiplier);
+        return mult;
+    }
+
+    public float GetArmorMultiplier()
+    {
+        return ARMOR_50_PERCENT_DR / (ARMOR_50_PERCENT_DR + GetStat(Stats.CurrentArmor));
+    }
+
+#endregion
+
+
+#region Effects
+    public bool HasEffectOfType(Type type)
+    {
+        foreach(EffectInstance instance in activeEffectInstances)
+        {
+            Debug.Log(instance);
+            if (instance.effect.GetType().IsAssignableFrom(type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [Server]
+    public EffectInstance AddEffect(Effect effect, Entity origin, int numStacks = 1)
+    {
+        EffectInstance existingInstance = activeEffectInstances.Find(x => x.effect == effect);
+
+        if (existingInstance != null)
+        {
+            if (existingInstance.GetNumberOfStacks() >= effect.GetMaxStacks())
+            {
+                return existingInstance;
+            }
+
+            existingInstance.AddStacks(numStacks);
+
+            EffectInstancesUpated(existingInstance);
+
+            return existingInstance;
+        }
+        else
+        {
+            // Brand new effect
+            EffectInstance newInstance = effect.CreateEffectInstance(origin);
+            newInstance.Attach(this);
+            newInstance.EffectStart();
+
+            newInstance.SetStacks(numStacks);
+
+            newInstance.OnStackChange += EffectInstancesUpated;
+
+            activeEffectInstances.Add(newInstance);
+
+            OnEffectAdded?.Invoke(newInstance);
+
+            EffectInstancesUpated(newInstance);
+
+            RpcEffectStart(effect.effectID);
+
+            return newInstance;
+        }
+    }
+
+    void EffectInstancesUpated(EffectInstance instance)
+    {
+        activeEffectIDs[instance.effect.effectID] = instance.GetNumberOfStacks();
+    }
+
+    [ClientRpc]
+    void RpcEffectStart(string effectID)
+    {
+        Effect effect = Effect.GetEffect(effectID);
+
+        VisualEffect visualEffectPrefab = effect.GetVisualEffectApplied();
+        if (visualEffectPrefab != null)
+        {
+            if (!appliedEffectVisuals.ContainsKey(effectID))
+            {
+                appliedEffectVisuals.Add(effectID, new());
+            }
+
+            List<VisualEffect> createdInstances = AttachVisualEffect(visualEffectPrefab);
+
+            foreach (VisualEffect visualEffect in createdInstances)
+            {
+                appliedEffectVisuals[effectID].Add(visualEffect);
+            }
+        }
+    }
+
+    public List<VisualEffect> AttachVisualEffect(VisualEffect vfxPrefab)
+    {
+        List<VisualEffect> createdInstances = new();
+        SkinnedMeshRenderer[] smrs = GetComponentsInChildren<SkinnedMeshRenderer>();
+
+        // Set the rate of each visual effect according to the total number so we don't go nuts when an entity has a ton of SMRs
+        float rate = vfxPrefab.GetFloat("Rate");
+        rate /= smrs.Count();
+
+        foreach (SkinnedMeshRenderer smr in smrs)
+        {
+            VisualEffect visEffInst = GameObject.Instantiate(vfxPrefab);
+            visEffInst.transform.parent = transform;
+            visEffInst.transform.SetLocalPositionAndRotation(new(), new());
+
+            visEffInst.SetFloat("Rate", rate);
+
+            visEffInst.SetSkinnedMeshRenderer("SkinnedMeshRenderer", smr);
+
+            createdInstances.Add(visEffInst);
+        }
+
+        return createdInstances;
+    }
+
+    [Server]
+    public void RemoveEffect(Effect effect)
+    {
+        EffectInstance instance = GetEffectInstance(effect);
+
+        if (instance != null)
+        {
+            activeEffectInstances.Remove(instance);
+            activeEffectIDs.Remove(instance.effect.effectID);
+
+            instance.EffectEnd();
+
+            instance.OnStackChange -= EffectInstancesUpated;
+
+            OnEffectRemoved?.Invoke(instance);
+        }
+
+
+        RpcEffectEnd(effect.effectID);
+    }
+
+    [Server]
+    public void RemoveStackOfEffect(Effect effect)
+    {
+        EffectInstance instance = GetEffectInstance(effect);
+
+        if (instance != null)
+        {
+            instance.RemoveStack();
+        }
+    }
+
+    [ClientRpc]
+    void RpcEffectEnd(string effectID)
+    {
+        if (appliedEffectVisuals.ContainsKey(effectID))
+        {
+            foreach (VisualEffect visualEffect in appliedEffectVisuals[effectID])
+            {
+                // TODO stop gracefully
+                GameObject.Destroy(visualEffect.gameObject);
+            }
+
+            appliedEffectVisuals.Remove(effectID);
+        }
+    }
+
+    [Server]
+    public EffectInstance GetEffectInstance(Effect effect)
+    {
+        foreach(EffectInstance effectInstance in activeEffectInstances)
+        {
+            if(effectInstance.effect == effect)
+            {
+                return effectInstance;
+            }
+        }
+
+        return null;
+    }
+
+    public List<EffectInstance> GetActiveEffects()
+    {
+        return activeEffectInstances;
+    }
+
+
+    [Server]
+    public void TransferEffects(Entity newTarget)
+    {
+        for(int i = activeEffectInstances.Count() - 1; i >= 0; i--)
+        {
+            //newTarget.activeEffectInstances.Add(activeEffectInstances[i]);
+            newTarget.AddEffect(activeEffectInstances[i].effect, activeEffectInstances[i].origin, activeEffectInstances[i].GetNumberOfStacks());
+
+            RemoveEffect(activeEffectInstances[i].effect);
+        }
+    }
+
+    private void ActiveEffectIDsDictCallback(SyncIDictionary<string, int>.Operation operation, string effectID, int stacks)
+    {
+        OnEffectsChanged?.Invoke();
+    }
+
+#endregion
     
 #region Movement
 
@@ -831,7 +1120,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
         
     }
 
-
     protected bool ChangePosition(Vector3 newPosition)
     {
         transform.position = newPosition;
@@ -852,7 +1140,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
             navMeshAgent.Warp(newPosition);
         }
     }
-
 
     public virtual bool TeleportToRandomNavMeshPosition(float minDistance, float maxDistance)
     {
@@ -880,17 +1167,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
 #endregion
 
-    protected abstract void Animate();
-    
-    public virtual void LateUpdate()
-    {
-        if (Time.timeScale > 0)
-        {
-            Animate();
-        }
-    }
 
-    
     public virtual void ActivateRig(string name)
     {
 
@@ -936,26 +1213,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
     {
         return Color.grey;
     }
-
-    [Server]
-    public virtual void AdjustStatsForLevel()
-    {
-        // Preserve ratios to scale out our current alongside max
-        float healthPerc = GetHealthRatio();
-        float healthMult = Equation.ENTITY_HEALTH_SCALING.Calculate(this.entityLevel);
-        if (this is Boss)
-        {
-            healthMult = Equation.BOSS_HEALTH_SCALING.Calculate(this.entityLevel);
-        }
-        
-        SetStat(Stats.MaxHealth, (int) (baseHealth * healthMult)); //maxHealth = (int) (baseHealth * healthMult);
-        SetStat(Stats.CurrentHealth, (int) (GetStat(Stats.MaxHealth) * healthPerc)); //currentHealth = (int) (maxHealth * healthPerc);
-
-        float armorPerc = GetPercentArmor();
-        SetStat(Stats.MaxArmor, baseArmor);
-        SetStat(Stats.CurrentArmor, (int) (GetStat(Stats.MaxArmor) * armorPerc));
-    }
-
 
     /// <summary>
     /// Angle around Y to face the target
@@ -1391,7 +1648,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
 
 
-    #region MATS COLORS ETC
+#region Materials Colors Etc
 
     [ClientRpc]
     public void RpcSetMaterial(string materialName, MaterialChangeProperties properties)
@@ -1654,7 +1911,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
         Elite elite = (Elite) gameObject.AddComponent(eliteType);
         originalScale = transform.localScale;
     }
-    #endregion
+#endregion
 
     [Server]
     public void AddEnergy(int amount)
@@ -1921,7 +2178,45 @@ public abstract class Entity : NetworkBehaviour, Damageable
         }     
     }
 
+    
+    [Server]
+    public virtual void HitAnEntity(HitInfo hitResult)
+    {
+        OnHitEntity?.Invoke(hitResult);
+        
+        if (GetTraits() != null)
+        {
+            foreach (Trait trait in GetTraits().ToProcOrderList())
+            {
+                trait.OnHit(hitResult);
+            }
+        }
 
+        if (owningPlayer != null)
+        {
+            owningPlayer.HitAnEntity(hitResult);
+        }
+    }
+
+    
+    [Server]
+    public void KilledAnEntity(HitInfo hitResult)
+    {
+        OnKillEntity?.Invoke(hitResult);
+
+        foreach (Trait trait in GetTraits().ToProcOrderList())
+        {
+            trait.OnKill(hitResult);
+        }
+
+        if (owningPlayer != null)
+        {
+            owningPlayer.KilledAnEntity(hitResult);
+        }
+    }
+
+
+#region Threat Management
     private void AddThreat(Entity threatSource, int threatToAdd)
     {
         if (threats.ContainsKey(threatSource))
@@ -1931,6 +2226,18 @@ public abstract class Entity : NetworkBehaviour, Damageable
         else
         {
             threats.Add(threatSource, threatToAdd);
+        }
+    }
+
+    public float GetThreatFromEntity(Entity entity)
+    {
+        if (threats.ContainsKey(entity))
+        {
+            return threats[entity];
+        }
+        else
+        {
+            return 0;
         }
     }
 
@@ -1952,585 +2259,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
         return damagers.ContainsKey(other);
     }
 
-    [Server]
-    public virtual void HitAnEntity(HitInfo hitResult)
-    {
-        OnHitEntity?.Invoke(hitResult);
-        
-        if (GetTraits() != null)
-        {
-            foreach (Trait trait in GetTraits().ToProcOrderList())
-            {
-                trait.OnHit(hitResult);
-            }
-        }
-    }
-
     
-    [Server]
-    public void KilledAnEntity(HitInfo hitResult)
-    {
-        OnKillEntity?.Invoke(hitResult);
-
-        foreach (Trait trait in GetTraits().ToProcOrderList())
-        {
-            trait.OnKill(hitResult);
-        }
-
-        if (owningPlayer != null)
-        {
-            owningPlayer.KilledAnEntity(hitResult);
-        }
-    }
-
-    [Server]
-    public virtual void Stagger()
-    {
-        if (isDead || animator == null)
-        {
-            return;
-        }
-
-        bool hasStaggerAnim = false;
-        foreach (AnimatorControllerParameter param in animator.parameters)
-        {
-            if (param.name == "Stagger")
-            {
-                hasStaggerAnim = true;
-            }
-        }
-
-        if (staggerable && hasStaggerAnim)
-        {
-            attacking = false;
-            SetAnimatorTrigger("Stagger");
-        }
-
-        lastStagger = Time.time;
-
-        OnStaggered();
-    }
-
-    protected virtual void OnStaggered()
-    {
-        
-    }
-    
-    public bool paused = false;
-    public void PauseEntity()
-    {
-        paused = true;
-        if (animator != null)
-        {
-            animator.speed = 0;
-        }
-
-        foreach (VisualEffect visualEffect in GetComponentsInChildren<VisualEffect>())
-        {
-            visualEffect.pause = true;
-        }
-    }
-
-    public void UnpauseEntity()
-    {
-        paused = false;
-        if (animator != null)
-        {
-            animator.speed = 1; 
-        }
-
-        foreach (VisualEffect visualEffect in GetComponentsInChildren<VisualEffect>())
-        {
-            visualEffect.pause = false;
-        }
-    }
-
-    [Server]
-    protected void AdjustMaxHealth (int newValue, float customRatio = -1)
-    {
-        float portion;
-        if (customRatio < -1)
-        {
-            portion = GetHealthRatio();
-        }
-        else
-        {
-            portion = customRatio;
-        }
-
-        SetStat(Stats.MaxHealth, newValue);
-
-        SetStat(Stats.CurrentHealth, portion * GetStat(Stats.MaxHealth));
-    }
-
-    [Server]
-    protected void AdjustMaxEnergy (int newValue, float customNewRatio = -1)
-    {
-        float portion;
-        if (customNewRatio < -1)
-        {
-            portion = GetEnergyRatio();
-        }
-        else
-        {
-            portion = customNewRatio;
-        }
-
-        SetStat(Stats.MaxEnergy, newValue);
-
-        SetStat(Stats.CurrentEnergy, portion * GetStat(Stats.MaxEnergy));
-    }
-
-
-    [Server]
-    public void SetHealthRatio(float ratio)
-    {
-        SetStat(Stats.CurrentHealth, ratio * GetStat(Stats.MaxHealth));
-    }
-
-    public Entity GetDamageableEntity()
-    {
-        return this;
-    }
-
-    public int GetDamageablePriority()
-    {
-        return 0;
-    }
-
-    
-    public bool HasEffectOfType(Type type)
-    {
-        foreach(EffectInstance instance in activeEffectInstances)
-        {
-            Debug.Log(instance);
-            if (instance.effect.GetType().IsAssignableFrom(type))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    [Server]
-    public EffectInstance AddEffect(Effect effect, Entity origin, int numStacks = 1)
-    {
-        EffectInstance existingInstance = activeEffectInstances.Find(x => x.effect == effect);
-
-        if (existingInstance != null)
-        {
-            if (existingInstance.GetNumberOfStacks() >= effect.GetMaxStacks())
-            {
-                return existingInstance;
-            }
-
-            existingInstance.AddStacks(numStacks);
-
-            EffectInstancesUpated(existingInstance);
-
-            return existingInstance;
-        }
-        else
-        {
-            // Brand new effect
-            EffectInstance newInstance = effect.CreateEffectInstance(origin);
-            newInstance.Attach(this);
-            newInstance.EffectStart();
-
-            newInstance.SetStacks(numStacks);
-
-            newInstance.OnStackChange += EffectInstancesUpated;
-
-            activeEffectInstances.Add(newInstance);
-
-            OnEffectAdded?.Invoke(newInstance);
-
-            EffectInstancesUpated(newInstance);
-
-            RpcEffectStart(effect.effectID);
-
-            return newInstance;
-        }
-    }
-
-    void EffectInstancesUpated(EffectInstance instance)
-    {
-        activeEffectIDs[instance.effect.effectID] = instance.GetNumberOfStacks();
-    }
-
-    [ClientRpc]
-    void RpcEffectStart(string effectID)
-    {
-        Effect effect = Effect.GetEffect(effectID);
-
-        VisualEffect visualEffectPrefab = effect.GetVisualEffectApplied();
-        if (visualEffectPrefab != null)
-        {
-            if (!appliedEffectVisuals.ContainsKey(effectID))
-            {
-                appliedEffectVisuals.Add(effectID, new());
-            }
-
-            List<VisualEffect> createdInstances = AttachVisualEffect(visualEffectPrefab);
-
-            foreach (VisualEffect visualEffect in createdInstances)
-            {
-                appliedEffectVisuals[effectID].Add(visualEffect);
-            }
-        }
-    }
-
-    public List<VisualEffect> AttachVisualEffect(VisualEffect vfxPrefab)
-    {
-        List<VisualEffect> createdInstances = new();
-        SkinnedMeshRenderer[] smrs = GetComponentsInChildren<SkinnedMeshRenderer>();
-
-        // Set the rate of each visual effect according to the total number so we don't go nuts when an entity has a ton of SMRs
-        float rate = vfxPrefab.GetFloat("Rate");
-        rate /= smrs.Count();
-
-        foreach (SkinnedMeshRenderer smr in smrs)
-        {
-            VisualEffect visEffInst = GameObject.Instantiate(vfxPrefab);
-            visEffInst.transform.parent = transform;
-            visEffInst.transform.SetLocalPositionAndRotation(new(), new());
-
-            visEffInst.SetFloat("Rate", rate);
-
-            visEffInst.SetSkinnedMeshRenderer("SkinnedMeshRenderer", smr);
-
-            createdInstances.Add(visEffInst);
-        }
-
-        return createdInstances;
-    }
-
-    [Server]
-    public void RemoveEffect(Effect effect)
-    {
-        EffectInstance instance = GetEffectInstance(effect);
-
-        if (instance != null)
-        {
-            activeEffectInstances.Remove(instance);
-            activeEffectIDs.Remove(instance.effect.effectID);
-
-            instance.EffectEnd();
-
-            instance.OnStackChange -= EffectInstancesUpated;
-
-            OnEffectRemoved?.Invoke(instance);
-        }
-
-
-        RpcEffectEnd(effect.effectID);
-    }
-
-    [Server]
-    public void RemoveStackOfEffect(Effect effect)
-    {
-        EffectInstance instance = GetEffectInstance(effect);
-
-        if (instance != null)
-        {
-            instance.RemoveStack();
-        }
-    }
-
-    [ClientRpc]
-    void RpcEffectEnd(string effectID)
-    {
-        if (appliedEffectVisuals.ContainsKey(effectID))
-        {
-            foreach (VisualEffect visualEffect in appliedEffectVisuals[effectID])
-            {
-                // TODO stop gracefully
-                GameObject.Destroy(visualEffect.gameObject);
-            }
-
-            appliedEffectVisuals.Remove(effectID);
-        }
-    }
-
-    [Server]
-    public EffectInstance GetEffectInstance(Effect effect)
-    {
-        foreach(EffectInstance effectInstance in activeEffectInstances)
-        {
-            if(effectInstance.effect == effect)
-            {
-                return effectInstance;
-            }
-        }
-
-        return null;
-    }
-
-    public List<EffectInstance> GetActiveEffects()
-    {
-        return activeEffectInstances;
-    }
-
-
-    [Server]
-    public void TransferEffects(Entity newTarget)
-    {
-        for(int i = activeEffectInstances.Count() - 1; i >= 0; i--)
-        {
-            //newTarget.activeEffectInstances.Add(activeEffectInstances[i]);
-            newTarget.AddEffect(activeEffectInstances[i].effect, activeEffectInstances[i].origin, activeEffectInstances[i].GetNumberOfStacks());
-
-            RemoveEffect(activeEffectInstances[i].effect);
-        }
-    }
-
-    public void SetAttacking(bool attacking = true)
-    {
-        this.attacking = attacking;
-    }
-
-    public void SetAttackingInSeconds(bool attacking, float seconds)
-    {
-        StartCoroutine(SetAttackingCoroutine(attacking, seconds));
-    }
-
-    IEnumerator SetAttackingCoroutine(bool attacking, float seconds)
-    {
-        bool previousAttackingState = this.attacking;
-        yield return new WaitForSeconds(seconds);
-
-        // Only change if something else hasn't since changed the attacking state
-        if (this.attacking == previousAttackingState)
-        {
-            Debug.Log("Set not attack");
-             this.attacking = attacking;
-        }
-    }
-
-    public virtual bool IsAttacking()
-    {
-        return attacking;
-    }
-
-    [ServerCallback]
-    public void AttackComplete()
-    {
-        attacking = false;
-    }
-
-    [Server]
-    public void OnProjectileCreated(Projectile projectilePrefab, Projectile projectileInstance)
-    {
-        StartCoroutine(OnProjectileCreatedCoroutine(projectilePrefab, projectileInstance));
-    }
-
-    [Server]
-    IEnumerator OnProjectileCreatedCoroutine(Projectile projectilePrefab, Projectile projectileInstance)
-    {
-        // Give one frame for it to spawn
-        yield return null;
-
-        ApplyTraitsToProjectile(projectilePrefab, projectileInstance);
-    }
-
-    [Server]
-    public virtual void ApplyTraitsToProjectile(Projectile projectilePrefab, Projectile projectileInstance)
-    {
-        foreach (Trait trait in GetTraits().ToProcOrderList())
-        {
-            trait.OnProjectileCreated(projectilePrefab, projectileInstance);
-        }
-    }
-
-
-    public virtual string GetName()
-    {
-        return entityName;
-    }
-
-    public virtual string GetDisplayName()
-    {
-        if (TryGetComponent(out Elite elite))
-        {
-            return elite.GetElitePrefix() + " " + entityName;
-        }
-
-        return entityName;
-    }
-     
-    public int GetMaxHealth()
-    {
-        return (int) GetStat(Stats.MaxHealth);
-    }
-
-    public int GetCurrentHealth()
-    {
-        return (int) GetStat(Stats.CurrentHealth);
-    }
-
-    public int GetCurrentArmor()
-    {
-        return (int) GetStat(Stats.CurrentArmor);
-    }
-
-    // returns proportion of max health remaining, e.g. 0.72 = 72%
-    public float GetHealthRatio()
-    {
-        if (GetStat(Stats.CurrentHealth) == 0)
-        {
-            return GetStat(Stats.MaxHealth) == 0 ? 1.0F : 0.0F;
-        }
-        
-        return GetCurrentHealth() / (float) GetMaxHealth();
-    }
-
-    public float GetEnergyRatio()
-    {
-        if (GetStat(Stats.CurrentEnergy) == 0)
-        {
-            return GetStat(Stats.MaxEnergy) == 0 ? 1.0F : 0.0F;
-        }
-        
-        return GetStat(Stats.CurrentEnergy) / (float) GetStat(Stats.MaxEnergy);
-    }
-
-    // returns proportion of max armor remaining, e.g. 1.00 = 100%
-    public float GetPercentArmor()
-    {
-        if (GetStat(Stats.CurrentArmor) <= 0)
-        {
-            return GetStat(Stats.MaxArmor) == 0 ? 1.0F : 0.0F;
-        }
-
-        return GetCurrentArmor() / GetStat(Stats.MaxArmor);
-    }
-
-    // returns the effective maximum health of this entity (total pre-armor damage required to kill it)
-    public float GetEffectiveMaxHealth()
-    {
-        return GetStat(Stats.MaxHealth) / GetArmorMultiplier();
-    }
-
-    public float ActualToEffectiveHealth(float actual)
-    {
-        return actual / GetArmorMultiplier();
-    }
-
-    public virtual float GetGlobalDamageMultiplier()
-    {
-        return Equation.ENEMY_GLOBAL_DAMAGE_MULTIPLIER.Calculate(entityLevel);
-    }
-
-    public float GetDamageTakenMultiplier()
-    {
-        float mult = 1.0F;
-        mult *= GetStat(Stats.DamageTakenMultiplier);
-        return mult;
-    }
-
-    public float GetArmorMultiplier()
-    {
-        return ARMOR_50_PERCENT_DR / (ARMOR_50_PERCENT_DR + GetStat(Stats.CurrentArmor));
-    }
-
-    /// <summary>
-    /// Applies any necessary modifiers to damage against a specific target
-    /// </summary>
-    /// <param name="target"></param>
-    /// <param name="damage"></param>
-    /// <returns></returns>
-    public virtual float ModifyDamageForTarget(Entity target, float damage)
-    {
-        if (GetOwningPlayer() != null)
-        {
-            foreach (Trait trait in GetTraits().ToProcOrderList())
-            {
-                damage = trait.ModifyDamageForTarget(this, target, damage);
-            }
-        }
-
-        return damage;
-    }
-
-    /// <summary>
-    /// Applies modifiers from this entity onto damage from a specific target
-    /// </summary>
-    /// <param name="target"></param>
-    /// <param name="damage"></param>
-    /// <returns></returns>
-    public virtual float ModifyDamageFromTarget(Entity target, float damage)
-    {
-        return damage;
-    }
-
-
-    public bool IsEntityType(EntityType type)
-    {
-        return types.Contains(type);
-    }
-
-    // Whether this entity can see other
-    [Server]
-    public bool SeesEntity(Entity other)
-    {
-        Vector3 otherPosition = other.GetWorldPosCenter(); /* so not looking through ground */
-
-        if (other.IsInvisible() || Vector3.Distance(GetWorldPosCenter(), otherPosition) > visionRadius)
-        {
-            // Non-LOS reasons it can't see the other
-            return false;
-        }
-        
-        Vector3 sightPos = sightPoint != null ? sightPoint.position : GetWorldPosCenter();
-
-        return !Physics.Linecast(sightPos, otherPosition, out var hit, ~ignoreInSightCalculation, QueryTriggerInteraction.Ignore);
-    }
-
-    public virtual Vector3 GetWorldPosCenter()
-    {
-        Collider collider = GetComponentInChildren<Collider>();
-        if (collider != null)
-        {
-            return collider.bounds.center;
-        }
-
-        return transform.position + new Vector3(0, 1, 0);
-    }
-
-    
-    public virtual Vector3 GetLocalPosCenter()
-    {
-        return transform.InverseTransformPoint(GetWorldPosCenter());
-    }
-
-
-    public float GetHeight()
-    {
-        return GetComponent<Collider>().bounds.extents.y * 2;
-    }
-    public float GetThreatFromEntity(Entity entity)
-    {
-        if (threats.ContainsKey(entity))
-        {
-            return threats[entity];
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    public Entity GetKiller()
-    {
-        return killer;
-    }
-
-    public CameraContext GetCameraContext()
-    {
-        return cameraContext;
-    }
-
 
     /// <summary>
     /// Get nearest enemy
@@ -2684,12 +2413,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
             && !entity.IsDead();
     }
 
-
-    public Faction GetFaction()
-    {
-        return faction;
-    }
-    
     /// <summary>
     /// Whether this considers other to be an ally
     /// </summary>
@@ -2699,7 +2422,7 @@ public abstract class Entity : NetworkBehaviour, Damageable
     {
         return other == this || faction.IsAlliesWithFaction(other.GetFaction());
     }
-    
+
     /// <summary>
     /// Whether this considers other to be an enemy
     /// </summary>
@@ -2710,10 +2433,257 @@ public abstract class Entity : NetworkBehaviour, Damageable
         return other != this && faction.IsEnemiesWithFaction(other.GetFaction());
     }
 
+
+    public Faction GetFaction()
+    {
+        return faction;
+    }
+    
+    
     public bool IsDead()
     {
         return isDead;
     }
+
+#endregion
+
+
+    [Server]
+    public virtual void Stagger()
+    {
+        if (isDead || animator == null)
+        {
+            return;
+        }
+
+        bool hasStaggerAnim = false;
+        foreach (AnimatorControllerParameter param in animator.parameters)
+        {
+            if (param.name == "Stagger")
+            {
+                hasStaggerAnim = true;
+            }
+        }
+
+        if (staggerable && hasStaggerAnim)
+        {
+            attacking = false;
+            SetAnimatorTrigger("Stagger");
+        }
+
+        lastStagger = Time.time;
+
+        OnStaggered();
+    }
+
+    protected virtual void OnStaggered()
+    {
+        
+    }
+    
+    public bool paused = false;
+    public void PauseEntity()
+    {
+        paused = true;
+        if (animator != null)
+        {
+            animator.speed = 0;
+        }
+
+        foreach (VisualEffect visualEffect in GetComponentsInChildren<VisualEffect>())
+        {
+            visualEffect.pause = true;
+        }
+    }
+
+    public void UnpauseEntity()
+    {
+        paused = false;
+        if (animator != null)
+        {
+            animator.speed = 1; 
+        }
+
+        foreach (VisualEffect visualEffect in GetComponentsInChildren<VisualEffect>())
+        {
+            visualEffect.pause = false;
+        }
+    }
+
+
+    public Entity GetDamageableEntity()
+    {
+        return this;
+    }
+
+    public int GetDamageablePriority()
+    {
+        return 0;
+    }
+
+    
+
+    public void SetAttacking(bool attacking = true)
+    {
+        this.attacking = attacking;
+    }
+
+    public void SetAttackingInSeconds(bool attacking, float seconds)
+    {
+        StartCoroutine(SetAttackingCoroutine(attacking, seconds));
+    }
+
+    IEnumerator SetAttackingCoroutine(bool attacking, float seconds)
+    {
+        bool previousAttackingState = this.attacking;
+        yield return new WaitForSeconds(seconds);
+
+        // Only change if something else hasn't since changed the attacking state
+        if (this.attacking == previousAttackingState)
+        {
+            Debug.Log("Set not attack");
+             this.attacking = attacking;
+        }
+    }
+
+    public virtual bool IsAttacking()
+    {
+        return attacking;
+    }
+
+    [ServerCallback]
+    public void AttackComplete()
+    {
+        attacking = false;
+    }
+
+    [Server]
+    public void OnProjectileCreated(Projectile projectilePrefab, Projectile projectileInstance)
+    {
+        StartCoroutine(OnProjectileCreatedCoroutine(projectilePrefab, projectileInstance));
+    }
+
+    [Server]
+    IEnumerator OnProjectileCreatedCoroutine(Projectile projectilePrefab, Projectile projectileInstance)
+    {
+        // Give one frame for it to spawn
+        yield return null;
+
+        ApplyTraitsToProjectile(projectilePrefab, projectileInstance);
+    }
+
+    [Server]
+    public virtual void ApplyTraitsToProjectile(Projectile projectilePrefab, Projectile projectileInstance)
+    {
+        foreach (Trait trait in GetTraits().ToProcOrderList())
+        {
+            trait.OnProjectileCreated(projectilePrefab, projectileInstance);
+        }
+    }
+
+
+    public virtual string GetName()
+    {
+        return entityName;
+    }
+
+    public virtual string GetDisplayName()
+    {
+        if (TryGetComponent(out Elite elite))
+        {
+            return elite.GetElitePrefix() + " " + entityName;
+        }
+
+        return entityName;
+    }
+     
+   
+    /// <summary>
+    /// Applies any necessary modifiers to damage against a specific target
+    /// </summary>
+    /// <param name="target"></param>
+    /// <param name="damage"></param>
+    /// <returns></returns>
+    public virtual float ModifyDamageForTarget(Entity target, float damage)
+    {
+        if (GetOwningPlayer() != null)
+        {
+            foreach (Trait trait in GetTraits().ToProcOrderList())
+            {
+                damage = trait.ModifyDamageForTarget(this, target, damage);
+            }
+        }
+
+        return damage;
+    }
+
+    /// <summary>
+    /// Applies modifiers from this entity onto damage from a specific target
+    /// </summary>
+    /// <param name="target"></param>
+    /// <param name="damage"></param>
+    /// <returns></returns>
+    public virtual float ModifyDamageFromTarget(Entity target, float damage)
+    {
+        return damage;
+    }
+
+
+    public bool IsEntityType(EntityType type)
+    {
+        return types.Contains(type);
+    }
+
+    // Whether this entity can see other
+    [Server]
+    public bool SeesEntity(Entity other)
+    {
+        Vector3 otherPosition = other.GetWorldPosCenter(); /* so not looking through ground */
+
+        if (other.IsInvisible() || Vector3.Distance(GetWorldPosCenter(), otherPosition) > visionRadius)
+        {
+            // Non-LOS reasons it can't see the other
+            return false;
+        }
+        
+        Vector3 sightPos = sightPoint != null ? sightPoint.position : GetWorldPosCenter();
+
+        return !Physics.Linecast(sightPos, otherPosition, out var hit, ~ignoreInSightCalculation, QueryTriggerInteraction.Ignore);
+    }
+
+    public virtual Vector3 GetWorldPosCenter()
+    {
+        Collider collider = GetComponentInChildren<Collider>();
+        if (collider != null)
+        {
+            return collider.bounds.center;
+        }
+
+        return transform.position + new Vector3(0, 1, 0);
+    }
+
+    
+    public virtual Vector3 GetLocalPosCenter()
+    {
+        return transform.InverseTransformPoint(GetWorldPosCenter());
+    }
+
+
+    public float GetHeight()
+    {
+        return GetComponent<Collider>().bounds.extents.y * 2;
+    }
+
+    public Entity GetKiller()
+    {
+        return killer;
+    }
+
+    public CameraContext GetCameraContext()
+    {
+        return cameraContext;
+    }
+
 
     // Used to denote transformations, by derivations that can transform
     public void Transforming(Entity newForm)
@@ -2728,6 +2698,8 @@ public abstract class Entity : NetworkBehaviour, Damageable
         OnTransformed?.Invoke(this, newForm);
     }
 
+
+#region Animations
     [Server]
     public void PlayAnimation(string animationName, float normalizedTransitionDuration)
     {
@@ -2782,6 +2754,11 @@ public abstract class Entity : NetworkBehaviour, Damageable
             Debug.Log(e);
         }
     }
+
+#endregion
+
+
+#region Death And Teardown
 
     [Server]
     public virtual void Die()
@@ -2905,6 +2882,49 @@ public abstract class Entity : NetworkBehaviour, Damageable
 
         corpseObject.layer = LayerMask.NameToLayer("Entities");
     }
+
+    public virtual void TeardownEntity()
+    {
+        // if (GetOwningPlayer() != null)
+        // {
+        //     GetOwningPlayer().SetWraithForm(null);
+        //     GetOwningPlayer().SetControlledEntity(null);
+
+        // }
+        WorldManager.UnregisterEntity(this);
+
+        OnDeathAnimationComplete?.Invoke();
+
+        NetworkServer.UnSpawn(gameObject);
+        Destroy(gameObject);
+    }
+    
+    // For behavior state machines
+    public class DeadState : State
+    {
+        Entity entity;
+
+        public DeadState(Entity entity)
+        {
+            this.entity = entity;
+            this.entity.invulnerable = true;
+        }
+
+        public override void Update()
+        {
+            if (entity.body != null && !entity.body.isKinematic)
+            {
+                entity.body.linearVelocity = new Vector3(0.0F, entity.body.linearVelocity.y, 0.0F);
+            }
+        }
+
+        public override bool ReadyForExit()
+        {
+            return false; // Never exiting, most likely
+        }
+    }
+
+#endregion
     
     GameObject CreateMeshImage(SkinnedMeshRenderer renderer)
     {
@@ -2924,22 +2944,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
         return newObj;
     }
 
-
-    public virtual void TeardownEntity()
-    {
-        // if (GetOwningPlayer() != null)
-        // {
-        //     GetOwningPlayer().SetWraithForm(null);
-        //     GetOwningPlayer().SetControlledEntity(null);
-
-        // }
-        WorldManager.UnregisterEntity(this);
-
-        OnDeathAnimationComplete?.Invoke();
-
-        NetworkServer.UnSpawn(gameObject);
-        Destroy(gameObject);
-    }
 
     public void SetCountedBySpawners(bool counted)
     {
@@ -3109,32 +3113,6 @@ public abstract class Entity : NetworkBehaviour, Damageable
         float aimMult = aiming ? AIM_MOVESPEED_MULT : 1.0F;
         
         return GetStat(Stats.MovementSpeedMult, 1.0F) * aimMult;
-    }
-
-
-    // For behavior state machines
-    public class DeadState : State
-    {
-        Entity entity;
-
-        public DeadState(Entity entity)
-        {
-            this.entity = entity;
-            this.entity.invulnerable = true;
-        }
-
-        public override void Update()
-        {
-            if (entity.body != null && !entity.body.isKinematic)
-            {
-                entity.body.linearVelocity = new Vector3(0.0F, entity.body.linearVelocity.y, 0.0F);
-            }
-        }
-
-        public override bool ReadyForExit()
-        {
-            return false; // Never exiting, most likely
-        }
     }
     
 }

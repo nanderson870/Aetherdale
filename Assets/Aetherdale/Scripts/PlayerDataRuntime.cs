@@ -217,6 +217,11 @@ public class PlayerDataRuntime
     public void EntityKilled(HitInfo killHit)
     {
         statistics.entitiesKilled++;
+
+        if (killHit.entityHit is Boss)
+        {
+            statistics.bossesKilled++;
+        }
     }
 
     void StoryEventReceived(string storyEvent)

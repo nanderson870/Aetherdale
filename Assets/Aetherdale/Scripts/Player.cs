@@ -67,6 +67,8 @@ public class Player : NetworkBehaviour, IStoryEventHandler
     } 
  
     public readonly SyncDictionary<string, float> stats = new();
+
+    PlayerSequenceStatistics sequenceStatistics = new();
  
 
     float lastTransform = 0.0F;
@@ -1031,6 +1033,7 @@ public class Player : NetworkBehaviour, IStoryEventHandler
         if (!inSequence)
         {
             ResetTraits();
+            sequenceStatistics = new();
         }
     }
 
@@ -1447,11 +1450,19 @@ public class Player : NetworkBehaviour, IStoryEventHandler
     {
         return trinket;
     }
+
+    [Server]
+    public void HitAnEntity(HitInfo hitInfo)
+    {
+        sequenceStatistics.damageDealt += hitInfo.damageDealt;
+    }
     
     [Server]
     public void KilledAnEntity(HitInfo hitResult)
     {
         OnEntityKilled?.Invoke(hitResult);
+
+        sequenceStatistics.enemiesKilled++;
 
         if (hitResult.entityHit is Boss entityAsBoss)
         {
@@ -1557,6 +1568,18 @@ public class Player : NetworkBehaviour, IStoryEventHandler
     }
     #endregion
 
+    #region Sequence Statistics
+    /// <summary>
+    /// Called from server-> client every checkpoint to denote sequence statistics have changed
+    /// </summary>
+    /// <param name="stats"></param>
+    [TargetRpc]
+    public void TargetSetSequenceStatistics(PlayerSequenceStatistics stats)
+    {
+        sequenceStatistics = stats;
+    }
+    #endregion
+
 
     #region Quests
     public void GiveQuest(Quest quest)
@@ -1579,6 +1602,7 @@ public class Player : NetworkBehaviour, IStoryEventHandler
     public void BeatAnArea(Area area)
     {
         TargetBeatAnArea(area.GetAreaID());
+        sequenceStatistics.areasCompleted++;
     }
 
     [TargetRpc]

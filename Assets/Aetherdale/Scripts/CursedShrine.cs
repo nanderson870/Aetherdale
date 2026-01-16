@@ -51,6 +51,17 @@ public class CursedShrine : NetworkBehaviour
                 NetworkServer.UnSpawn(traitOffering.gameObject);
                 Destroy(traitOffering.gameObject);
             }
+
+            RpcDestroyAll();
+        }
+    }
+
+    [ClientRpc]
+    void RpcDestroyAll()
+    {
+        foreach (ShopOfferingEffects effect in effects)
+        {
+            effect.gameObject.SetActive(false);
         }
     }
 }

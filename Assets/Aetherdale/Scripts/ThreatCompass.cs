@@ -52,7 +52,7 @@ public class ThreatCompass : MonoBehaviour, IOnLocalPlayerReadyTarget
             if (entity != null)
             {
                 if (entity.IsEnemy(owningEntity)
-                    && InRadius(entity)
+                    && (InRadius(entity) || entity.currentTarget == owningEntity)
                     && !currentThreats.ContainsKey(entity)
                     && (Mathf.Abs(owningEntity.GetCamera().gameObject.GetRelativeBearingAngle(entity.gameObject)) >   Camera.main.fieldOfView * 0.8F
                         || Mathf.Abs(owningEntity.GetCamera().gameObject.GetRelativePitchAngle(entity.gameObject)) > Camera.main.fieldOfView * 0.8F))

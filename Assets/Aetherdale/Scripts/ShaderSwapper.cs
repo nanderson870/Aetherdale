@@ -26,7 +26,7 @@ public class ShaderSwapper : MonoBehaviour
             return;
         }
 
-        foreach (Entity.RendererMaterialColor rmc in entity.defaultMaterialsColors)
+        foreach (RendererMaterialColor rmc in entity.defaultMaterialsColors)
         {
             Material[] newMats = new Material[rmc.materialsColors.Count()];
             for (int i = 0; i < rmc.renderer.materials.Count() && i < newMats.Count(); i++)
@@ -61,7 +61,7 @@ public class ShaderSwapper : MonoBehaviour
 
     public void SetFloat(string name, float value)
     {
-        foreach (Entity.RendererMaterialColor rmc in entity.defaultMaterialsColors)
+        foreach (RendererMaterialColor rmc in entity.defaultMaterialsColors)
         {
             foreach (Material material in rmc.renderer.materials)
             {

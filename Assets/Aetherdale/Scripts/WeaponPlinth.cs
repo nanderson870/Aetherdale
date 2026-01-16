@@ -91,8 +91,13 @@ public class WeaponPlinth : NetworkBehaviour, IInteractable
         if (newWeaponInfo == null)
         {
             weapon = null;
+            effects.gameObject.SetActive(false);
             BroadcastMessage("MeshesChanged", SendMessageOptions.DontRequireReceiver);
             return;
+        }
+        else
+        {
+            effects.gameObject.SetActive(true);
         }
 
         weapon = (WeaponData) ShopOffering.ShopOfferingFromInfo(newWeaponInfo);

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mirror;
 using UnityEngine.VFX;
+using FMOD.Studio;
+using FMODUnity;
 
 public class Rootrot : StatefulCombatEntity
 {
@@ -12,15 +14,20 @@ public class Rootrot : StatefulCombatEntity
 
     [Header("Tumble")]
     [SerializeField] VisualEffect tumbleVFX;
-    readonly float tumbleDistance = 70.0F;
-    readonly float tumbleContinueRelativeBearing = 60F;
+    [SerializeField] Hitbox tumbleHitbox;
+    [SerializeField] EventReference tumbleTelegraphSound;
+    [SerializeField] EventReference tumbleLoopSound;
+    readonly int tumbleDamage = 15;
     readonly float tumbleCooldown = 10.0F;
-    readonly float tumbleSpeed = 30;
-    readonly float tumbleAngularSpeed = 0F;
+    readonly float tumbleSpeed = 18;
+    readonly float tumbleOvershoot = 5.0F;
 
 
     float lastTumble = -10;
     bool inTumble = false;
+
+    EventInstance tumbleLoopInstance;
+
 
     public override void Stagger()
     {
@@ -42,7 +49,8 @@ public class Rootrot : StatefulCombatEntity
 
     public bool CanTumble(Entity target)
     {
-        return (Time.time - lastTumble) > tumbleCooldown;
+        return IsOvershootGrounded(target, tumbleOvershoot)
+            && (Time.time - lastTumble) > tumbleCooldown;
     }
 
     protected override State GetPreferredState()
@@ -68,12 +76,40 @@ public class Rootrot : StatefulCombatEntity
     public void TumbleStart()
     {
         inTumble = true;
+
+        Vector3 targetPos = currentTarget.transform.position + (0.2F * currentTarget.GetVelocity());
+        Vector3 overshoot = (targetPos - transform.position).normalized * 3.0F;
+        SlideToPositionWithSpeed(targetPos + overshoot, tumbleSpeed);
+
+        tumbleHitbox.StartHit(tumbleDamage, Element.Physical, HitType.Ability, this, 100);
+
+        RpcTumbleStart();
+
+    }
+
+    [ClientRpc]
+    void RpcTumbleTelegraph()
+    {
+        AudioManager.Singleton.PlayOneShot(tumbleTelegraphSound, GetWorldPosCenter());
+    }
+
+    [ClientRpc]
+    void RpcTumbleStart()
+    {
         tumbleVFX.SendEvent("Start");
 
-        Vector3 targetOffset = (currentTarget.transform.position + (currentTarget.GetVelocity() * 0.5F) - transform.position);
-        Vector3 targetOffsetOvershoot = targetOffset.normalized * 8.0F;
-        Vector3 destination = transform.position +  targetOffset + targetOffsetOvershoot;
-        SetDestination(destination, speed:tumbleSpeed, acceleration:999, angularSpeed:tumbleAngularSpeed);
+        tumbleLoopInstance = RuntimeManager.CreateInstance(tumbleLoopSound);
+        RuntimeManager.AttachInstanceToGameObject(tumbleLoopInstance, transform);
+        tumbleLoopInstance.start();
+    }
+
+    [ClientRpc]
+    void RpcTumbleStop()
+    {
+        tumbleVFX.SendEvent("Stop");
+
+        tumbleLoopInstance.stop(FMOD.Studio.STOP_MODE.ALLOWFADEOUT);
+        tumbleLoopInstance.release();
     }
 
     public class TumbleState : State
@@ -92,6 +128,7 @@ public class Rootrot : StatefulCombatEntity
 
             rootrot.ClearDestination();
             rootrot.SetAnimatorTrigger("TumbleEnter");
+            rootrot.RpcTumbleTelegraph();
 
             rootrot.currentTarget = target;
         }
@@ -121,11 +158,13 @@ public class Rootrot : StatefulCombatEntity
 
             rootrot.SetAnimatorTrigger("TumbleExit");
 
-            rootrot.tumbleVFX.SendEvent("Stop");
+            rootrot.RpcTumbleStop();
 
             rootrot.inTumble = false;
 
             rootrot.currentTarget = null;
+
+            rootrot.tumbleHitbox.EndHit();
 
             base.OnExit();
         }

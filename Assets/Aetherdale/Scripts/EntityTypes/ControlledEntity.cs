@@ -521,7 +521,7 @@ public abstract class ControlledEntity : Entity
             {
                 if (!dodging
                     && !sprinting
-                    && (attacking || (Time.time - lastAttackModeActionTime) <= attackModeTimeout)
+                    && (attacking || ((Time.time - lastAttackModeActionTime) <= attackModeTimeout && lastAttackModeActionTime > lastDodge))
                     || rotationTrackCamera)
                 {
                     // In attack mode or rotation is specified to track te camera
@@ -1359,6 +1359,7 @@ public abstract class ControlledEntity : Entity
     protected virtual void Dodge(Vector3 dodgeDirection)
     {
         attackedThisDodge = false;
+        lastDodge = Time.time;
         AudioManager.Singleton.PlayOneShot(dodgeSound, transform.position);
         if (isOwned)
         {

@@ -177,6 +177,7 @@ public class Murdomite : StatefulCombatEntity
         base.OnDestroy();
 
         burrowIdleInstance.stop(FMOD.Studio.STOP_MODE.IMMEDIATE);
+        burrowIdleInstance.release();
     }
 
     bool CanBurrow(Entity target)

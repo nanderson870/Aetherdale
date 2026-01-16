@@ -236,11 +236,6 @@ public class AreaSequencer : NetworkBehaviour
     [Server]
     public void StartAreaSequence(SequenceMode sequenceMode)
     {
-        foreach (Player player in Player.GetPlayers())
-        {
-            player.SetInSequence(true);
-        }
-
         areaQueue.Clear();
 
         PopulateAreaQueue();
@@ -261,6 +256,9 @@ public class AreaSequencer : NetworkBehaviour
         
         LoadArea(areaQueue.Dequeue(), stepScaling:false);
     }
+
+    #region Sequence Data Management
+    #endregion
 
     void PrintAreaQueue(string message = "")
     {

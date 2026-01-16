@@ -137,6 +137,7 @@ namespace Aetherdale
         void RpcBoughtItem()
         {
             AudioManager.Singleton.PlayOneShot(buySound);
+            effects.gameObject.SetActive(false);
         }
 
         public bool IsInteractable(ControlledEntity interactingEntity)
